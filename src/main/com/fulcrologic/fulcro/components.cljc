@@ -7,6 +7,7 @@
         [[goog.object :as gobj]
          cljsjs.react])
     [edn-query-language.core :as eql]
+    [taoensso.tufte :refer [p]]
     [clojure.spec.alpha :as s]
     [taoensso.timbre :as log]
     [clojure.walk :refer [prewalk]]
@@ -15,10 +16,17 @@
     [com.fulcrologic.fulcro.algorithms.denormalize :as fdn]
     [com.fulcrologic.fulcro.algorithms.lookup :as ah]
     [com.fulcrologic.guardrails.core :refer [>def]]
-    [clojure.set :as set])
+    [clojure.set :as set]
+    [cljs.env :as cljs-env]
+    [taoensso.encore :as enc])
   #?(:clj
      (:import
        [clojure.lang Associative IDeref APersistentMap])))
+
+#?(:clj
+   (defn current-config []
+     (let [config (some-> cljs-env/*compiler* deref (get-in [:options :external-config :fulcro]))]
+       config)))
 
 (defonce ^:private component-registry (atom {}))
 (def ^:dynamic *query-state* nil)
@@ -253,6 +261,8 @@
      (cond-> shared
        (not (empty? ks)) (get-in ks)))))
 
+(declare get-state)
+
 (letfn
   [(wrap-props-state-handler
      ([handler]
@@ -275,21 +285,60 @@
           (let [props (raw->newest-props raw-props raw-state)
                 state (gobj/get raw-state "fulcro$state")]
             (handler props state)))))
-   (should-component-update?
-     [raw-next-props raw-next-state]
+   (pure-should-component-update? [this raw-next-props raw-next-state]
      #?(:clj true
         :cljs (if *blindly-render*
                 true
                 (this-as this
-                  (let [current-props     (props this)
-                        next-props        (raw->newest-props raw-next-props raw-next-state)
-                        next-state        (gobj/get raw-next-state "fulcro$state")
-                        current-state     (gobj/getValueByKeys this "state" "fulcro$state")
-                        props-changed?    (not= current-props next-props)
-                        state-changed?    (not= current-state next-state)
-                        next-children     (gobj/get raw-next-props "children")
-                        children-changed? (not= (gobj/getValueByKeys this "props" "children") next-children)]
-                    (or props-changed? state-changed? children-changed?))))))
+                  (p (-> this react-type class->registry-key)
+                    (let [current-props     (props this)
+                          next-props        (raw->newest-props raw-next-props raw-next-state)
+                          next-state        (gobj/get raw-next-state "fulcro$state")
+                          current-state     (gobj/getValueByKeys this "state" "fulcro$state")
+                          props-changed?    (not= current-props next-props)
+                          state-changed?    (not= current-state next-state)
+                          next-children     (gobj/get raw-next-props "children")
+                          children-changed? (not= (gobj/getValueByKeys this "props" "children") next-children)]
+                      (or props-changed? state-changed? children-changed?)))))))
+   (adaptive-should-component-update?
+     #_"
+     Does the normal Fulcro SCU (diff of props/state/children) and measures how long it takes.
+     If, after 5 measurements, the time it is taking averages above the tolerance-ms, then
+     it will just start returning `true`.
+
+     This function that can be used as the default (or called by hand) for shouldComponentUpdate.
+
+     Usage everywhere: Set the compiler options:
+
+     ```
+     {:compiler-options
+       {:external-config
+         {:fulcro     {:component.shouldComponentUpdate/default :adaptive
+                       :component.shouldComponentUpdate.adaptive/ms 10000}
+     ```
+     "
+     [this raw-next-props raw-next-state tolerance-ms]
+     (let [samples   (gobj/get this "fulcro$adaptive_samples")
+           ns        (gobj/get this "fulcro$adaptive_total")
+           timed-scu (fn [] (let [start  (enc/now-nano)
+                                  answer (pure-should-component-update? this raw-next-props raw-next-state)
+                                  end    (enc/now-nano)
+                                  delta  (- end start)]
+                              (gobj/set this "fulcro$adaptive_samples" (inc samples))
+                              (gobj/set this "fulcro$adaptive_total" (+ delta ns))
+                              (when (> samples 100)
+                                (gobj/set this "fulcro$adaptive_samples" 0)
+                                (gobj/set this "fulcro$adaptive_total" 0))
+                              answer))]
+       (if (>= samples 5)
+         (if (> ns (* samples tolerance-ms 1000000.0))
+           (do
+             (log/info "SCU taking too long")
+             true)
+           (timed-scu))
+         (if
+           true
+           (timed-scu this raw-next-props raw-next-state)))))
    (component-did-update
      [raw-prev-props raw-prev-state snapshot]
      #?(:cljs
