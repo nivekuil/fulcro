@@ -228,6 +228,7 @@
 
 (defn- gen-client-dom-fn [create-element-symbol tag]
   `(defn ~tag ~(cdom/gen-docstring tag true)
+     {:style/indent :defn}
      [& ~'args]
      (let [conformed-args# (com.fulcrologic.fulcro.dom/parse-args ~'args) ; see CLJS file for spec
            {attrs#    :attrs

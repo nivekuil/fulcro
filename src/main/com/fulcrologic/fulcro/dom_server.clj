@@ -474,6 +474,7 @@
 
 (defn gen-tag-fn [tag]
   `(defn ~tag ~(cdom/gen-docstring tag false)
+     {:style/indent :defn}
      [& ~'args]
      (let [conformed-args# (util/conform! ::dom-element-args ~'args)
            {attrs#    :attrs
