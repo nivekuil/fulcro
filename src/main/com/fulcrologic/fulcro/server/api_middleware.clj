@@ -48,7 +48,9 @@
   primary implementation element of `wrap-api`."
   [core-response ring-response-fn]
   (assert (instance? clojure.lang.IObj core-response) "Scalar values can't be augmented.")
-  (with-meta core-response {::augment-response ring-response-fn}))
+  (if-let [existing-augment (::augment-response (meta core-response))]
+    (with-meta core-response {::augment-response (comp ring-response-fn existing-augment)})
+    (with-meta core-response {::augment-response ring-response-fn})))
 
 (defn apply-response-augmentations
   "Process the raw response from the parser looking for lambdas that were added by
