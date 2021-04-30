@@ -406,7 +406,7 @@
                                 (dissoc timeouts-and-params :error-timeout :deferred-timeout)
                                 (map (fn [a b] [a b]) segment matching-prefix))
                target-ident   (will-enter target app params)]
-           (when (or (not (eql/ident? target-ident)) (nil? (second target-ident)))
+           #_(when (or (not (eql/ident? target-ident)) (nil? (second target-ident)))
              (log/error "will-enter for router target" (rc/component-name target) "did not return a valid ident. Instead it returned: " target-ident "See https://book.fulcrologic.com/#err-dr-will-enter-invalid-ident"))
            (when (and (eql/ident? target-ident)
                    (not (contains? (some-> target-ident meta) :immediate)))
@@ -670,7 +670,8 @@
                                          (map (fn [a b] [a b]) segment matching-prefix))
                      router-ident      (rc/get-ident component {})
                      router-id         (-> router-ident second)
-                     target-ident      (will-enter target app params)
+                     target-ident      (or (route-immediate (:target-ident params))
+                                           (will-enter target app params))
                      completing-action (or (some-> target-ident meta :fn) (constantly true))
                      event-data        (merge
                                          {:error-timeout 5000 :deferred-timeout 20}
