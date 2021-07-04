@@ -633,9 +633,6 @@
          old-route      (current-route app-or-comp relative-class)
          new-path       (proposed-new-path app-or-comp relative-class new-route timeouts-and-params)]
      (cond
-       (and (= old-route new-route) (not (::force? timeouts-and-params)))
-       (log/debug "Request to change route, but path is the current route. Ignoring change request.")
-
        (and #?(:clj true :cljs goog.DEBUG) (not (seq new-path)))
        (log/error "Could not find route targets for new-route" new-route "See https://book.fulcrologic.com/#err-dr-new-route-target-not-found")
 
